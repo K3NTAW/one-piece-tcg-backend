@@ -47,4 +47,28 @@ export class DecksController {
   async delete(@Request() req, @Param('id') id: string) {
     return this.decksService.delete(id, req.user.id);
   }
+
+  @Post('export/:id')
+  @ApiOperation({ summary: 'Export deck as shareable code' })
+  @ApiResponse({ status: 200, description: 'Deck exported successfully' })
+  @ApiResponse({ status: 404, description: 'Deck not found' })
+  async exportDeck(@Request() req, @Param('id') id: string) {
+    return this.decksService.exportDeck(id, req.user.id);
+  }
+
+  @Post('parse')
+  @ApiOperation({ summary: 'Parse deck list without creating deck' })
+  @ApiResponse({ status: 200, description: 'Deck list parsed successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid deck list format' })
+  async parseDeckList(@Body() parseData: { deckList: string }) {
+    return this.decksService.parseDeckList(parseData.deckList);
+  }
+
+  @Post('import')
+  @ApiOperation({ summary: 'Import deck from shareable code' })
+  @ApiResponse({ status: 201, description: 'Deck imported successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid deck code' })
+  async importDeck(@Request() req, @Body() importData: { deckCode: string; name?: string }) {
+    return this.decksService.importDeck(importData.deckCode, req.user.id, importData.name);
+  }
 }

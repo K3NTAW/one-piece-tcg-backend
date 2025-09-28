@@ -16,8 +16,16 @@ model User {
   email         String   @unique
   passwordHash  String?
   avatarUrl     String?
+  firstName     String?
+  lastName      String?
+  avatar        String?
+  provider      String?  // 'google', 'discord', 'apple', 'local'
+  googleId      String?  @unique
+  discordId     String?  @unique
+  appleId       String?  @unique
   isActive      Boolean  @default(true)
   isVerified    Boolean  @default(false)
+  isEmailVerified Boolean @default(false)
   lastLogin     DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

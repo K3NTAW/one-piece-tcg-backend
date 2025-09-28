@@ -7,9 +7,9 @@ import { ConfigService } from '@nestjs/config';
 export class DiscordStrategy extends PassportStrategy(Strategy, 'discord') {
   constructor(private configService: ConfigService) {
     super({
-      clientID: configService.get('DISCORD_CLIENT_ID'),
-      clientSecret: configService.get('DISCORD_CLIENT_SECRET'),
-      callbackURL: '/auth/discord/callback',
+      clientID: configService.get<string>('DISCORD_CLIENT_ID'),
+      clientSecret: configService.get<string>('DISCORD_CLIENT_SECRET'),
+      callbackURL: `${configService.get<string>('API_URL')}/auth/discord/callback`,
       scope: ['identify', 'email'],
     });
   }
@@ -19,13 +19,20 @@ export class DiscordStrategy extends PassportStrategy(Strategy, 'discord') {
     refreshToken: string,
     profile: any,
     done: any,
-  ) {
+  ): Promise<any> {
+    const { id, username, email, avatar, discriminator } = profile;
+    
     const user = {
-      email: profile.email,
-      name: profile.username,
-      picture: `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`,
+      discordId: id,
+      email: email,
+      firstName: username,
+      lastName: discriminator ? `#${discriminator}` : '',
+      avatar: avatar ? `https://cdn.discordapp.com/avatars/${id}/${avatar}.png` : null,
+      provider: 'discord',
       accessToken,
+      refreshToken,
     };
+
     done(null, user);
   }
 }

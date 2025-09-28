@@ -162,4 +162,68 @@ export class AuthService {
       refreshToken,
     };
   }
+
+  async oauthLogin(oauthUser: any) {
+    const { email, firstName, lastName, avatar, provider, googleId, discordId, appleId } = oauthUser;
+    
+    // Generate username from email if not provided
+    const username = email.split('@')[0] + '_' + Math.random().toString(36).substr(2, 5);
+    
+    // Check if user exists by email
+    let user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      // Create new user
+      user = await this.prisma.user.create({
+        data: {
+          username,
+          email,
+          firstName: firstName || '',
+          lastName: lastName || '',
+          avatar: avatar || null,
+          provider,
+          googleId: provider === 'google' ? googleId : null,
+          discordId: provider === 'discord' ? discordId : null,
+          appleId: provider === 'apple' ? appleId : null,
+          isEmailVerified: true, // OAuth users have verified emails
+        },
+      });
+    } else {
+      // Update existing user with OAuth info if needed
+      const updateData: any = {
+        isEmailVerified: true,
+      };
+
+      if (provider === 'google' && googleId) {
+        updateData.googleId = googleId;
+      } else if (provider === 'discord' && discordId) {
+        updateData.discordId = discordId;
+      } else if (provider === 'apple' && appleId) {
+        updateData.appleId = appleId;
+      }
+
+      if (!user.provider || user.provider !== provider) {
+        updateData.provider = provider;
+      }
+
+      if (avatar && avatar !== user.avatar) {
+        updateData.avatar = avatar;
+      }
+
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: updateData,
+      });
+    }
+
+    // Generate tokens
+    const tokens = await this.generateTokens(user.id, user.email);
+
+    return {
+      user: this.usersService.sanitizeUser(user),
+      ...tokens,
+    };
+  }
 }
