@@ -1,0 +1,356 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  email         String   @unique
+  passwordHash  String?
+  avatarUrl     String?
+  isActive      Boolean  @default(true)
+  isVerified    Boolean  @default(false)
+  lastLogin     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  collections   UserCollection[]
+  decks         Deck[]
+  games         GamePlayer[]
+  gamesAsPlayer1 Game[] @relation("GamePlayer1")
+  gamesAsPlayer2 Game[] @relation("GamePlayer2")
+  gamesAsWinner Game[] @relation("GameWinner")
+  friendships   Friendship[] @relation("UserFriendships")
+  friendOf      Friendship[] @relation("FriendFriendships")
+  sentTrades    Trade[] @relation("SenderTrades")
+  receivedTrades Trade[] @relation("ReceiverTrades")
+  notifications Notification[]
+  sessions      Session[]
+  battlePasses  UserBattlePass[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Card {
+  id           String   @id @default(uuid())
+  apiId        String   @unique // API TCG card ID
+  cardNumber   String?  // Card number in set
+  name         String
+  setCode      String
+  setName      String
+  rarity       String
+  cardType     String
+  cost         Int?
+  power        Int?
+  counterPower Int?
+  attribute    String?
+  color        String
+  effectText   String?
+  flavorText   String?
+  imageUrl     String?
+  smallImageUrl String?
+  largeImageUrl String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  collections UserCollection[]
+  deckCards   DeckCard[]
+  effects     CardEffect[]
+  leaderDecks Deck[] @relation("DeckLeader")
+
+  @@map("cards")
+}
+
+model CardEffect {
+  id          String @id @default(uuid())
+  cardId      String
+  effectType  String // 'Activate', 'Trigger', 'Counter', 'Passive'
+  cost        Int?
+  effectText  String
+  conditions  String?
+  isActive    Boolean @default(true)
+
+  // Relations
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@map("card_effects")
+}
+
+model Set {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  releaseDate DateTime
+  totalCards  Int
+  imageUrl    String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("sets")
+}
+
+model UserCollection {
+  id           String @id @default(uuid())
+  userId       String
+  cardId       String
+  quantity     Int    @default(1)
+  foilQuantity Int    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, cardId])
+  @@map("user_collections")
+}
+
+model Deck {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  description String?
+  isPublic    Boolean  @default(false)
+  isValid     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards     DeckCard[]
+  shares    DeckShare[]
+  gamesAsDeck1 Game[] @relation("GameDeck1")
+  gamesAsDeck2 Game[] @relation("GameDeck2")
+  leaderId  String?
+  leader    Card?      @relation("DeckLeader", fields: [leaderId], references: [id])
+  gameStats GameStats[]
+
+  @@map("decks")
+}
+
+model DeckCard {
+  id       String @id @default(uuid())
+  deckId   String
+  cardId   String
+  quantity Int
+
+  // Relations
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([deckId, cardId])
+  @@map("deck_cards")
+}
+
+model DeckShare {
+  id        String   @id @default(uuid())
+  deckId    String
+  sharedWith String
+  canEdit   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@map("deck_shares")
+}
+
+model Game {
+  id              String   @id @default(uuid())
+  status          String   // 'WAITING', 'ACTIVE', 'COMPLETED', 'CANCELLED'
+  player1Id       String
+  player2Id       String
+  deck1Id         String
+  deck2Id         String
+  currentPlayerId String
+  turn            Int      @default(1)
+  phase           String   // 'DON_PHASE', 'MAIN_PHASE', 'BATTLE_PHASE', 'END_PHASE'
+  winnerId        String?
+  gameState       Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  player1 User @relation("GamePlayer1", fields: [player1Id], references: [id])
+  player2 User @relation("GamePlayer2", fields: [player2Id], references: [id])
+  deck1   Deck @relation("GameDeck1", fields: [deck1Id], references: [id])
+  deck2   Deck @relation("GameDeck2", fields: [deck2Id], references: [id])
+  winner  User? @relation("GameWinner", fields: [winnerId], references: [id])
+  players GamePlayer[]
+  actions GameAction[]
+  gameStats GameStats[]
+
+  @@map("games")
+}
+
+model GamePlayer {
+  id       String @id @default(uuid())
+  gameId   String
+  userId   String
+  position Int    // 1 or 2
+  isReady  Boolean @default(false)
+
+  // Relations
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, userId])
+  @@map("game_players")
+}
+
+model GameAction {
+  id         String   @id @default(uuid())
+  gameId     String
+  playerId   String
+  actionType String
+  actionData Json
+  createdAt  DateTime @default(now())
+
+  // Relations
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@map("game_actions")
+}
+
+model GameStats {
+  id        String @id @default(uuid())
+  gameId    String
+  deckId    String
+  wins      Int    @default(0)
+  losses    Int    @default(0)
+  draws     Int    @default(0)
+
+  // Relations
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  deck Deck @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, deckId])
+  @@map("game_stats")
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userId    String
+  friendId  String
+  status    String   // 'pending', 'accepted', 'blocked'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user   User @relation("UserFriendships", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendFriendships", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@map("friendships")
+}
+
+model Trade {
+  id          String   @id @default(uuid())
+  senderId    String
+  receiverId  String
+  senderCards Json
+  receiverCards Json
+  status      String   // 'pending', 'accepted', 'rejected', 'cancelled'
+  message     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  sender   User @relation("SenderTrades", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceiverTrades", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@map("trades")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String   // 'friend_request', 'trade_request', 'game_invite', 'system'
+  title     String
+  message   String
+  data      Json?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model BattlePass {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  levels BattlePassLevel[]
+  userBattlePasses UserBattlePass[]
+
+  @@map("battle_passes")
+}
+
+model BattlePassLevel {
+  id           String @id @default(uuid())
+  battlePassId String
+  level        Int
+  experienceRequired Int
+  rewards      Json
+  isActive     Boolean @default(true)
+
+  // Relations
+  battlePass BattlePass @relation(fields: [battlePassId], references: [id], onDelete: Cascade)
+
+  @@unique([battlePassId, level])
+  @@map("battle_pass_levels")
+}
+
+model UserBattlePass {
+  id           String @id @default(uuid())
+  userId       String
+  battlePassId String
+  currentLevel Int    @default(1)
+  experience   Int    @default(0)
+  isCompleted  Boolean @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  battlePass BattlePass @relation(fields: [battlePassId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, battlePassId])
+  @@map("user_battle_passes")
+}

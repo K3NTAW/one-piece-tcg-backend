@@ -1,0 +1,227 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('🌱 Starting card database seeding...');
+
+  // Sample One Piece TCG cards for initial seeding
+  const sampleCards = [
+    {
+      apiId: 'OP01-001',
+      cardNumber: '001',
+      name: 'Monkey D. Luffy',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Leader',
+      cardType: 'Leader',
+      cost: null,
+      power: null,
+      counterPower: null,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[Activate: Main] [Once Per Turn] (2) (Rest this Leader): Look at the top 5 cards of your deck, reveal 1 {Straw Hat Pirates} type card and add it to your hand. Place the remaining cards at the bottom of your deck in any order.',
+      flavorText: 'I\'m gonna be the King of the Pirates!',
+          imageUrl: 'https://picsum.photos/300/400?random=1',
+          smallImageUrl: 'https://picsum.photos/150/200?random=1',
+          largeImageUrl: 'https://picsum.photos/400/600?random=1',
+    },
+    {
+      apiId: 'OP01-002',
+      cardNumber: '002',
+      name: 'Roronoa Zoro',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Common',
+      cardType: 'Character',
+      cost: 2,
+      power: 3000,
+      counterPower: 2000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 2 or more {Straw Hat Pirates} type characters, this character gains +1000 power during this turn.',
+      flavorText: 'I\'ll become the world\'s greatest swordsman!',
+          imageUrl: 'https://picsum.photos/300/400?random=2',
+          smallImageUrl: 'https://picsum.photos/150/200?random=2',
+          largeImageUrl: 'https://picsum.photos/400/600?random=2',
+    },
+    {
+      apiId: 'OP01-003',
+      cardNumber: '003',
+      name: 'Nami',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Common',
+      cardType: 'Character',
+      cost: 1,
+      power: 2000,
+      counterPower: 1000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] Draw 1 card.',
+      flavorText: 'I\'m the navigator of this ship!',
+          imageUrl: 'https://picsum.photos/300/400?random=3',
+          smallImageUrl: 'https://picsum.photos/150/200?random=3',
+          largeImageUrl: 'https://picsum.photos/400/600?random=3',
+    },
+    {
+      apiId: 'OP01-004',
+      cardNumber: '004',
+      name: 'Usopp',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Common',
+      cardType: 'Character',
+      cost: 1,
+      power: 1000,
+      counterPower: 2000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 1 or more {Straw Hat Pirates} type characters, this character gains +1000 power during this turn.',
+      flavorText: 'I\'m the sniper king!',
+          imageUrl: 'https://picsum.photos/300/400?random=4',
+          smallImageUrl: 'https://picsum.photos/150/200?random=4',
+          largeImageUrl: 'https://picsum.photos/400/600?random=4',
+    },
+    {
+      apiId: 'OP01-005',
+      cardNumber: '005',
+      name: 'Sanji',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Common',
+      cardType: 'Character',
+      cost: 2,
+      power: 2000,
+      counterPower: 1000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 2 or more {Straw Hat Pirates} type characters, this character gains +1000 power during this turn.',
+      flavorText: 'I\'m the cook of this ship!',
+          imageUrl: 'https://picsum.photos/300/400?random=5',
+          smallImageUrl: 'https://picsum.photos/150/200?random=5',
+          largeImageUrl: 'https://picsum.photos/400/600?random=5',
+    },
+    {
+      apiId: 'OP01-006',
+      cardNumber: '006',
+      name: 'Tony Tony Chopper',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Common',
+      cardType: 'Character',
+      cost: 1,
+      power: 1000,
+      counterPower: 1000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 1 or more {Straw Hat Pirates} type characters, this character gains +1000 power during this turn.',
+      flavorText: 'I\'m the doctor of this ship!',
+          imageUrl: 'https://picsum.photos/300/400?random=6',
+          smallImageUrl: 'https://picsum.photos/150/200?random=6',
+          largeImageUrl: 'https://picsum.photos/400/600?random=6',
+    },
+    {
+      apiId: 'OP01-007',
+      cardNumber: '007',
+      name: 'Nico Robin',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Uncommon',
+      cardType: 'Character',
+      cost: 3,
+      power: 3000,
+      counterPower: 2000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 3 or more {Straw Hat Pirates} type characters, this character gains +1000 power during this turn.',
+      flavorText: 'I want to live!',
+          imageUrl: 'https://picsum.photos/300/400?random=7',
+          smallImageUrl: 'https://picsum.photos/150/200?random=7',
+          largeImageUrl: 'https://picsum.photos/400/600?random=7',
+    },
+    {
+      apiId: 'OP01-008',
+      cardNumber: '008',
+      name: 'Franky',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Uncommon',
+      cardType: 'Character',
+      cost: 3,
+      power: 3000,
+      counterPower: 2000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 3 or more {Straw Hat Pirates} type characters, this character gains +1000 power during this turn.',
+      flavorText: 'SUPER!',
+          imageUrl: 'https://picsum.photos/300/400?random=8',
+          smallImageUrl: 'https://picsum.photos/150/200?random=8',
+          largeImageUrl: 'https://picsum.photos/400/600?random=8',
+    },
+    {
+      apiId: 'OP01-009',
+      cardNumber: '009',
+      name: 'Brook',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Uncommon',
+      cardType: 'Character',
+      cost: 3,
+      power: 3000,
+      counterPower: 2000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 3 or more {Straw Hat Pirates} type characters, this character gains +1000 power during this turn.',
+      flavorText: 'Yohohoho!',
+          imageUrl: 'https://picsum.photos/300/400?random=9',
+          smallImageUrl: 'https://picsum.photos/150/200?random=9',
+          largeImageUrl: 'https://picsum.photos/400/600?random=9',
+    },
+    {
+      apiId: 'OP01-010',
+      cardNumber: '010',
+      name: 'Jinbe',
+      setCode: 'OP01',
+      setName: 'Romance Dawn',
+      rarity: 'Rare',
+      cardType: 'Character',
+      cost: 4,
+      power: 4000,
+      counterPower: 3000,
+      attribute: 'Straw Hat Pirates',
+      color: 'Red',
+      effectText: '[On Play] If you have 4 or more {Straw Hat Pirates} type characters, this character gains +2000 power during this turn.',
+      flavorText: 'I\'m the helmsman of this ship!',
+          imageUrl: 'https://picsum.photos/300/400?random=10',
+          smallImageUrl: 'https://picsum.photos/150/200?random=10',
+          largeImageUrl: 'https://picsum.photos/400/600?random=10',
+    },
+  ];
+
+  console.log(`📦 Seeding ${sampleCards.length} sample cards...`);
+
+  for (const cardData of sampleCards) {
+    try {
+      await prisma.card.upsert({
+        where: { apiId: cardData.apiId },
+        update: cardData,
+        create: cardData,
+      });
+      console.log(`✅ Seeded card: ${cardData.name}`);
+    } catch (error) {
+      console.error(`❌ Failed to seed card ${cardData.name}:`, error);
+    }
+  }
+
+  console.log('🎉 Card seeding completed!');
+}
+
+main()
+  .catch((e) => {
+    console.error('💥 Seeding failed:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
