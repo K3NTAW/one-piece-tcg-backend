@@ -199,13 +199,25 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Initialize game state
       const gameState = await this.gamesService.initializeGame(game.id);
 
-      // Notify both players about the match
-      this.server.to(roomId).emit('matchFound', {
+      // Notify both players about the match with their respective opponent info
+      // Send to player1
+      player1Socket.emit('matchFound', {
         gameId: game.id,
         roomId,
         opponent: {
           id: player2.userId,
           username: player2.username,
+        },
+        gameState,
+      });
+      
+      // Send to player2
+      player2Socket.emit('matchFound', {
+        gameId: game.id,
+        roomId,
+        opponent: {
+          id: player1.userId,
+          username: player1.username,
         },
         gameState,
       });

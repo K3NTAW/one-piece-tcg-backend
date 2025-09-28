@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { EffectEngineService } from './effect-engine.service';
 
 @Injectable()
 export class GamesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private effectEngine: EffectEngineService
+  ) {}
 
   async findAll() {
     return this.prisma.game.findMany({
@@ -162,20 +166,36 @@ export class GamesService {
           include: {
             cards: {
               include: {
-                card: true,
+                card: {
+                  include: {
+                    effects: true,
+                  },
+                },
               },
             },
-            leader: true,
+            leader: {
+              include: {
+                effects: true,
+              },
+            },
           },
         },
         deck2: {
           include: {
             cards: {
               include: {
-                card: true,
+                card: {
+                  include: {
+                    effects: true,
+                  },
+                },
               },
             },
-            leader: true,
+            leader: {
+              include: {
+                effects: true,
+              },
+            },
           },
         },
       },
@@ -186,8 +206,45 @@ export class GamesService {
     }
 
     // Initialize game state with shuffled decks
-    const deck1Cards = this.shuffleDeck(game.deck1.cards.map(dc => dc.card));
-    const deck2Cards = game.deck2 ? this.shuffleDeck(game.deck2.cards.map(dc => dc.card)) : [];
+    // Expand deck cards based on quantity and include effects
+    const deck1Cards = this.shuffleDeck(
+      game.deck1.cards.flatMap(dc => 
+        Array(dc.quantity).fill(null).map(() => ({ 
+          ...dc.card,
+          effects: dc.card.effects || []
+        }))
+      )
+    );
+    const deck2Cards = game.deck2 ? this.shuffleDeck(
+      game.deck2.cards.flatMap(dc => 
+        Array(dc.quantity).fill(null).map(() => ({ 
+          ...dc.card,
+          effects: dc.card.effects || []
+        }))
+      )
+    ) : [];
+    
+    console.log(`Deck1 total cards: ${deck1Cards.length}`);
+    console.log(`Deck2 total cards: ${deck2Cards.length}`);
+    console.log(`Deck1 cards from DB:`, game.deck1.cards.map(dc => ({ name: dc.card.name, quantity: dc.quantity })));
+    if (game.deck2) {
+      console.log(`Deck2 cards from DB:`, game.deck2.cards.map(dc => ({ name: dc.card.name, quantity: dc.quantity })));
+    }
+
+    // Register all card effects with the effect engine
+    const allCards = [...deck1Cards, ...deck2Cards, game.deck1.leader, game.deck2?.leader].filter(Boolean);
+    let totalEffectsRegistered = 0;
+    allCards.forEach(card => {
+      if (card.effects && card.effects.length > 0) {
+        card.effects.forEach(dbEffect => {
+          const engineEffect = this.convertDbEffectToEngineEffect(dbEffect);
+          this.effectEngine.registerEffect(engineEffect);
+          totalEffectsRegistered++;
+          console.log(`Registered effect for ${card.name}: ${dbEffect.effectText} (ID: ${engineEffect.id})`);
+        });
+      }
+    });
+    console.log(`Total effects registered: ${totalEffectsRegistered}`);
 
     const gameState: any = {
       phase: 'main',
@@ -204,7 +261,10 @@ export class GamesService {
           donDeck: Array(10).fill({ type: 'DON!!', id: 'don-1', tapped: false }), // 10 DON!! cards
           donArea: [{ type: 'DON!!', id: 'don-1', tapped: false }], // First player starts with 1 DON!!
           trash: [],
-          leader: game.deck1.leader,
+          leader: {
+            ...game.deck1.leader,
+            effects: game.deck1.leader.effects || []
+          },
           canAttack: false, // First player can't attack on first turn
           isFirstTurn: true, // Track if this is the first turn
         },
@@ -223,10 +283,23 @@ export class GamesService {
         donDeck: Array(10).fill({ type: 'DON!!', id: 'don-1', tapped: false }), // 10 DON!! cards
         donArea: [], // Available DON!! resources
         trash: [],
-        leader: game.deck2.leader,
+          leader: {
+            ...game.deck2.leader,
+            effects: game.deck2.leader.effects || []
+          },
         canAttack: true, // Second player can attack on their first turn
         isFirstTurn: true, // Track if this is the first turn
       };
+    }
+
+    // Debug final deck sizes
+    console.log(`Player1 final deck size: ${gameState.players[game.player1Id].deck.length}`);
+    console.log(`Player1 hand size: ${gameState.players[game.player1Id].hand.length}`);
+    console.log(`Player1 life cards: ${gameState.players[game.player1Id].lifeCards.length}`);
+    if (game.player2Id) {
+      console.log(`Player2 final deck size: ${gameState.players[game.player2Id].deck.length}`);
+      console.log(`Player2 hand size: ${gameState.players[game.player2Id].hand.length}`);
+      console.log(`Player2 life cards: ${gameState.players[game.player2Id].lifeCards.length}`);
     }
 
     // Update game with initial state
@@ -280,8 +353,8 @@ export class GamesService {
       case 'attachDon':
         newGameState = this.processAttachDon(newGameState, actionData);
         break;
-      case 'playCard':
-        newGameState = this.processPlayCard(newGameState, actionData);
+      case 'useEffect':
+        newGameState = this.processUseEffect(newGameState, actionData);
         break;
       default:
         throw new Error('Unknown action type');
@@ -322,10 +395,10 @@ export class GamesService {
       throw new Error('Cannot attack - not your turn or attack not allowed');
     }
     
-    // Find the attacking card
-    const attackingCard = this.findCardInPlay(attacker, attackerCardId);
+    // Find the attacking card - must be in the field (characters area)
+    const attackingCard = this.findCardInField(attacker, attackerCardId);
     if (!attackingCard) {
-      throw new Error('Attacking card not found');
+      throw new Error('Attacking card not found in field - only characters in the field can attack');
     }
     
     // Check summoning sickness (can't attack if just played this turn unless Rush)
@@ -336,6 +409,21 @@ export class GamesService {
     // Check if card is already tapped
     if (attackingCard.tapped) {
       throw new Error('This character has already been used this turn');
+    }
+    
+    // Validate attack target - can only attack rested characters or leaders
+    if (targetId) {
+      const targetPlayer = gameState.players[Object.keys(gameState.players).find(id => id !== attackerId)];
+      const targetCard = this.findCardInPlay(targetPlayer, targetId);
+      
+      if (!targetCard) {
+        throw new Error('Target card not found');
+      }
+      
+      // Can only attack leaders or rested characters
+      if (targetCard.cardType !== 'Leader' && !targetCard.tapped) {
+        throw new Error('Can only attack leaders or rested characters');
+      }
     }
     
     // Mark card as tapped (used for attack)
@@ -527,6 +615,11 @@ export class GamesService {
       .find((card: any) => card.id === cardId);
   }
 
+  private findCardInField(player: any, cardId: string) {
+    // Only characters in the field can attack (not hand, deck, trash, etc.)
+    return (player.characters || []).find((card: any) => card.id === cardId);
+  }
+
   private findCardInHand(player: any, cardId: string) {
     return player.hand.find((card: any) => card.id === cardId);
   }
@@ -661,7 +754,9 @@ export class GamesService {
     
     // Draw phase: draw one card (skip on first turn for first player)
     if (nextPlayer.deck.length > 0 && !(gameState.turn === 1 && nextPlayer.isFirstTurn)) {
-      nextPlayer.hand.push(nextPlayer.deck.shift());
+      const drawnCard = nextPlayer.deck.shift();
+      nextPlayer.hand.push(drawnCard);
+      console.log(`Player ${gameState.currentPlayer} drew a card. Deck now has ${nextPlayer.deck.length} cards.`);
     }
     nextPlayer.isFirstTurn = false; // Mark that first turn is over
     
@@ -688,6 +783,264 @@ export class GamesService {
       where: { id: userId },
       select: { id: true, username: true, email: true },
     });
+  }
+
+  private processUseEffect(gameState: any, actionData: any) {
+    const { playerId, effectId, cardId, targetId } = actionData.action;
+    const player = gameState.players[playerId];
+    
+    if (!player) {
+      throw new Error('Player not found in game state');
+    }
+
+    const context = {
+      playerId,
+      cardId,
+      targetId,
+      gameState,
+      additionalData: actionData.action.additionalData
+    };
+
+    try {
+      // Check if this is a database effect (starts with 'db_')
+      if (effectId.startsWith('db_')) {
+        const result = this.effectEngine.activateEffect(effectId, context);
+        
+        // Update game state based on effect result
+        if (result.type === 'draw') {
+          console.log(`Player ${playerId} drew ${result.count} cards`);
+        } else if (result.type === 'powerBoost') {
+          console.log(`Card ${result.cardId} got +${result.boost} power`);
+        } else if (result.type === 'heal') {
+          console.log(`Player ${playerId} healed ${result.amount} life`);
+        } else if (result.type === 'damage') {
+          console.log(`Opponent took ${result.amount} damage`);
+        } else if (result.type === 'custom') {
+          console.log(`Custom effect activated: ${result.message}`);
+        }
+      } else {
+        // Fallback to old hardcoded effects for backward compatibility
+        const result = this.effectEngine.activateEffect(effectId, context);
+        
+        if (result.type === 'draw') {
+          console.log(`Player ${playerId} drew ${result.count} cards`);
+        } else if (result.type === 'powerBoost') {
+          console.log(`Card ${result.cardId} got +${result.boost} power`);
+        } else if (result.type === 'heal') {
+          console.log(`Player ${playerId} healed ${result.amount} life`);
+        } else if (result.type === 'damage') {
+          console.log(`Opponent took ${result.amount} damage`);
+        }
+      }
+      
+      return gameState;
+    } catch (error) {
+      throw new Error(`Failed to activate effect: ${error.message}`);
+    }
+  }
+
+  private convertDbEffectToEngineEffect(dbEffect: any): any {
+    // Convert database effect to effect engine format
+    const effectId = `db_${dbEffect.id}`;
+    
+    // Map effect types
+    let triggerType = 'onActivate';
+    if (dbEffect.effectType === 'Trigger') {
+      triggerType = 'onPlay';
+    } else if (dbEffect.effectType === 'Counter') {
+      triggerType = 'onCounter';
+    } else if (dbEffect.effectType === 'Passive') {
+      triggerType = 'onPlay';
+    }
+
+    // Parse effect text to determine action
+    const effectText = dbEffect.effectText.toLowerCase();
+    const parsedEffect = this.parseEffectText(effectText);
+
+    return {
+      id: effectId,
+      name: dbEffect.effectText,
+      description: dbEffect.effectText,
+      trigger: { type: triggerType },
+      action: { 
+        type: parsedEffect.actionType, 
+        value: parsedEffect.value, 
+        target: parsedEffect.target,
+        parsedSteps: parsedEffect.steps, // Store parsed steps for complex effects
+        customAction: (gameState: any, cardId: string, context: any) => {
+          return this.executeComplexEffect(dbEffect.effectText, gameState, cardId, context);
+        }
+      },
+      cost: dbEffect.cost || 0,
+      oncePerTurn: dbEffect.conditions?.includes('Once per turn') || false,
+      oncePerGame: dbEffect.conditions?.includes('Once per game') || false,
+    };
+  }
+
+  private parseEffectText(effectText: string): any {
+    const text = effectText.toLowerCase();
+    
+    // Simple effects that can be executed directly
+    if (text.includes('draw')) {
+      const drawMatch = text.match(/draw (\d+)/);
+      return {
+        actionType: 'draw',
+        value: drawMatch ? parseInt(drawMatch[1]) : 1,
+        target: 'self',
+        steps: []
+      };
+    }
+    
+    if (text.includes('power') && text.includes('+')) {
+      const powerMatch = text.match(/\+(\d+)/);
+      return {
+        actionType: 'powerBoost',
+        value: powerMatch ? parseInt(powerMatch[1]) : 1000,
+        target: 'self',
+        steps: []
+      };
+    }
+    
+    if (text.includes('heal')) {
+      const healMatch = text.match(/heal (\d+)/);
+      return {
+        actionType: 'heal',
+        value: healMatch ? parseInt(healMatch[1]) : 1,
+        target: 'self',
+        steps: []
+      };
+    }
+    
+    if (text.includes('damage')) {
+      const damageMatch = text.match(/damage (\d+)/);
+      return {
+        actionType: 'damage',
+        value: damageMatch ? parseInt(damageMatch[1]) : 1,
+        target: 'opponent',
+        steps: []
+      };
+    }
+    
+    if (text.includes('rush')) {
+      return {
+        actionType: 'rush',
+        value: 0,
+        target: 'self',
+        steps: []
+      };
+    }
+    
+    if (text.includes('blocker')) {
+      return {
+        actionType: 'blocker',
+        value: 0,
+        target: 'self',
+        steps: []
+      };
+    }
+    
+    if (text.includes('counter')) {
+      const counterMatch = text.match(/\+(\d+)/);
+      return {
+        actionType: 'counter',
+        value: counterMatch ? parseInt(counterMatch[1]) : 1000,
+        target: 'self',
+        steps: []
+      };
+    }
+
+    // Complex effects that need step-by-step execution
+    const steps = this.parseComplexEffectSteps(effectText);
+    return {
+      actionType: 'complex',
+      value: 0,
+      target: 'self',
+      steps: steps
+    };
+  }
+
+  private parseComplexEffectSteps(effectText: string): any[] {
+    const steps = [];
+    const text = effectText.toLowerCase();
+    
+    // Parse "Reveal X card(s) from the top of your deck"
+    if (text.includes('reveal') && text.includes('top of your deck')) {
+      const revealMatch = text.match(/reveal (\d+)/);
+      steps.push({
+        type: 'reveal',
+        count: revealMatch ? parseInt(revealMatch[1]) : 1,
+        location: 'top_of_deck'
+      });
+    }
+    
+    // Parse "If that card's type includes X"
+    if (text.includes('if that card') && text.includes('type includes')) {
+      const typeMatch = text.match(/type includes "([^"]+)"/);
+      if (typeMatch) {
+        steps.push({
+          type: 'condition',
+          condition: 'card_type_includes',
+          value: typeMatch[1]
+        });
+      }
+    }
+    
+    // Parse "give up to X rested DON!! card"
+    if (text.includes('give up to') && text.includes('rested don')) {
+      const donMatch = text.match(/give up to (\d+)/);
+      steps.push({
+        type: 'attach_don',
+        count: donMatch ? parseInt(donMatch[1]) : 1,
+        condition: 'rested_only',
+        target: 'character_or_leader'
+      });
+    }
+    
+    // Parse "attach X DON!! to"
+    if (text.includes('attach') && text.includes('don')) {
+      const attachMatch = text.match(/attach (\d+)/);
+      steps.push({
+        type: 'attach_don',
+        count: attachMatch ? parseInt(attachMatch[1]) : 1,
+        target: 'character_or_leader'
+      });
+    }
+    
+    // Parse "search your deck for"
+    if (text.includes('search your deck')) {
+      steps.push({
+        type: 'search',
+        location: 'deck',
+        target: 'hand'
+      });
+    }
+    
+    // Parse "discard X card(s)"
+    if (text.includes('discard')) {
+      const discardMatch = text.match(/discard (\d+)/);
+      steps.push({
+        type: 'discard',
+        count: discardMatch ? parseInt(discardMatch[1]) : 1,
+        location: 'hand',
+        target: 'trash'
+      });
+    }
+    
+    return steps;
+  }
+
+  private executeComplexEffect(effectText: string, gameState: any, cardId: string, context: any): any {
+    console.log(`Executing complex effect: ${effectText}`);
+    
+    // For now, return a placeholder that indicates the effect needs manual resolution
+    // In a full implementation, this would handle the step-by-step execution
+    return {
+      type: 'complex_effect',
+      message: 'Complex effect activated - requires manual resolution',
+      effectText: effectText,
+      requiresPlayerChoice: true,
+      steps: this.parseComplexEffectSteps(effectText.toLowerCase())
+    };
   }
 
   private processNextPhase(gameState: any, actionData: any) {

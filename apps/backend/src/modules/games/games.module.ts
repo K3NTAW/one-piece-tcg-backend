@@ -6,6 +6,7 @@ import { GamesController } from './games.controller';
 import { GameEngineService } from './game-engine.service';
 import { AiOpponentService } from './ai-opponent.service';
 import { MatchmakingService } from './matchmaking.service';
+import { EffectEngineService } from './effect-engine.service';
 import { GameGateway } from '../game/game.gateway';
 
 @Module({
@@ -20,7 +21,7 @@ import { GameGateway } from '../game/game.gateway';
       inject: [ConfigService],
     }),
   ],
-  providers: [GamesService, GameEngineService, AiOpponentService, MatchmakingService, GameGateway],
+    providers: [GamesService, GameEngineService, AiOpponentService, MatchmakingService, EffectEngineService, GameGateway],
   controllers: [GamesController],
   exports: [GamesService, GameEngineService, AiOpponentService, MatchmakingService, GameGateway],
 })
